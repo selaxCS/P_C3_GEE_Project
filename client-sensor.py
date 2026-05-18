@@ -1,12 +1,11 @@
 import random
 import time
 from datetime import datetime
-import json
-import socket
 
-# Server configuration
-HOST = '127.0.0.1'
-PORT = 65432
+import requests  # Replaces socket for API communication 
+
+
+API_URL = "http://127.0.0.1:8000/api/data"
 
 class Sensor:
 
@@ -22,30 +21,31 @@ class Sensor:
         return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     
     def update_sensor_values(self):
-        
+
         self.temp = max(0, min(40, self.temp + random.uniform(-0.5, 0.5)))
         self.hum = max(0, min(100, self.hum + random.uniform(-0.5, 0.5)))
         self.flow = max(0, self.flow + random.uniform(-0.05, 0.05))
         self.rain = max(0, min(1, self.rain + random.uniform(-0.02, 0.02)))
 
     def generate_sensor_data(self):
+
         self.update_sensor_values()
         
         return {
             "temperature": {
-                "Temperature": round(self.temp, 2),
+                "value": round(self.temp, 2),
                 "Timestamp": self.get_timestamp()
             },
             "humidity": {
-                "Humidity": round(self.hum, 2),
+                "value": round(self.hum, 2),
                 "Timestamp": self.get_timestamp()
             },
             "irrigation": {
-                "Water Flow": round(self.flow, 2),
+                "value": round(self.flow, 2),
                 "Timestamp": self.get_timestamp()
             },
             "rain_gauge": {
-                "Precipitation": round(self.rain, 2),
+                "value": round(self.rain, 2),
                 "Timestamp": self.get_timestamp()
             }
         }
@@ -54,23 +54,30 @@ def run_sender():
 
     sensor1 = Sensor()
 
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting API-based data transmission...")
+
     while True:
-        try:
-            # Create a socket and connect to the server
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((HOST, PORT))
+        # Generate the structured batch of sensor data
+        data_batch = sensor1.generate_sensor_data()
+        
+
+        for sensor_name, details in data_batch.items():
+            payload = {
+                "sensor": sensor_name,
+                "value": details["value"]
+            }
+            
+            try:
+                # Perform the HTTP POST request as mandated 
+                response = requests.post(API_URL, json=payload, timeout=5)
                 
-                # Generate new data and encode it as JSON
-                data = sensor1.generate_sensor_data()
-                message = json.dumps(data).encode('utf-8')
-                
-                # Send the encoded data payload
-                s.sendall(message)
-                
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Data sent correctly.")
-                
-        except ConnectionRefusedError:
-            print("Error: Could not connect to the receiver server.")
+                if response.status_code == 201:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] {sensor_name} stored successfully.")
+                else:
+                    print(f"Error: API returned status {response.status_code} for {sensor_name}.")
+                    
+            except requests.exceptions.RequestException as e:
+                print(f"Connection Error: Could not reach the API server at {API_URL}.")
 
         
         time.sleep(3)

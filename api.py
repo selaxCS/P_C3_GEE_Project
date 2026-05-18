@@ -3,14 +3,14 @@ from fastapi import FastAPI, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from enum import Enum
 from contextlib import asynccontextmanager
 import uvicorn
 import logging
+
 from servidor import SessionLocal, Reading, Sensor
 
-# Configure logging to see errors in the terminal
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 class OrderEnum(str, Enum):
     ascendant = "ascendant"
     descendant = "descendant"
+
+class ReadingCreate(BaseModel):
+    sensor: str = Field(..., example="new_sensor_name")
+    value: float = Field(..., example=10.5)
 
 class ReadingSchema(BaseModel):
     id: int
@@ -29,8 +33,9 @@ class ReadingSchema(BaseModel):
     class Config:
         from_attributes = True
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+# --- DYNAMIC SCHEMA HELPER ---
+
+def update_openapi_schema(app: FastAPI):
 
     db = SessionLocal()
     try:
@@ -53,12 +58,17 @@ async def lifespan(app: FastAPI):
         logger.error(f"Startup error (dropdown generation failed): {e}")
     finally:
         db.close()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    
+    update_openapi_schema(app)
     yield
 
 app = FastAPI(
-    title="Sensor Data Access API",
-    description="API service providing filtered access to stored sensor data.",
-    version="1.9.0",
+    title="Dynamic Sensor API",
+    description="API that updates its documentation dynamically as new sensors are added.",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -69,14 +79,50 @@ def get_db():
     finally:
         db.close()
 
-@app.get("/api/data",response_model=List[ReadingSchema],summary="Retrieve sensor readings ")
+# --- POST ENDPOINT  ---
+
+@app.post("/api/data", response_model=ReadingSchema, status_code=201)
+def create_reading(reading_data: ReadingCreate, db: Session = Depends(get_db)):
+    # Check/Create sensor
+    sensor = db.query(Sensor).filter(Sensor.name == reading_data.sensor).first()
+    
+    new_sensor_created = False
+    if not sensor:
+        sensor = Sensor(name=reading_data.sensor)
+        db.add(sensor)
+        db.commit()
+        db.refresh(sensor)
+        new_sensor_created = True
+        logger.info(f"New sensor registered: {sensor.name}")
+
+    # Create reading
+    new_reading = Reading(sensor_id=sensor.id,value=reading_data.value,timestamp=datetime.utcnow()
+    )
+    db.add(new_reading)
+    db.commit()
+    db.refresh(new_reading)
+
+    
+    if new_sensor_created:
+        update_openapi_schema(app)
+    
+    return {
+        "id": new_reading.id,
+        "sensor": sensor.name,
+        "value": new_reading.value,
+        "timestamp": new_reading.timestamp
+    }
+
+# --- GET ENDPOINT  ---
+
+@app.get("/api/data", response_model=List[ReadingSchema])
 
 def get_sensor_data(
     
     sensor: Optional[str] = Query(None, alias="Sensor"),
     order: OrderEnum = Query(OrderEnum.ascendant, alias="Order"),
     init_date: Optional[date] = Query(None, alias="Init date Ex: YYYY-MM-DD"),
-    end_date: Optional[date] = Query(None, alias="End date Ex:YYYY-MM-DD"),
+    end_date: Optional[date] = Query(None, alias="End date Ex: YYYY-MM-DD"),
     db: Session = Depends(get_db)
 ):
 
@@ -84,11 +130,11 @@ def get_sensor_data(
         query = db.query(Reading).join(Sensor)
 
         if sensor:
+            
             query = query.filter(Sensor.name == sensor)
             
         if init_date:
             query = query.filter(Reading.timestamp >= datetime.combine(init_date, datetime.min.time()))
-            
         if end_date:
             query = query.filter(Reading.timestamp <= datetime.combine(end_date, datetime.max.time()))
 
@@ -108,7 +154,7 @@ def get_sensor_data(
             } for r in results
         ]
     except Exception as e:
-        logger.error(f"Database query error: {e}")
+        logger.error(f"GET Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error: Database access failed.")
 
 if __name__ == "__main__":

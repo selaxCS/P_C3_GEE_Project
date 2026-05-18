@@ -1,48 +1,52 @@
-# Project 3: Data Access
+# Project 4: Storage Through API
 
-**Subject:** Programming and Communications 3
-**Degree:** Electronic Engineering
-**Students:** Alexandru Anton Catrinoi Sfarghie 
+**Subject:** Programming and Communications III  
+**Degree:** Electronic Engineering  
+**Student Name:** Alexandru Anton Catrinoi Sfarghie  
+  
 
-## Task 1: API Development
+
+## Task 1 & 2: API Data Insertion 
 
 ### Brief description of the task 
-The goal of this task is to create a RESTful API with the FastAPI framework. This API will help users access sensor data stored in a PostgreSQL database. It serves as a secure layer, allowing users to query, filter, and sort data using standard HTTP requests. Users do not need direct database access or SQL knowledge. 
-
+The main goal of Project 4 is to centralize data operations within the API. Previously, data was inserted into the database through a dedicated socket server. In this project, we need to: 
+1. **Task 1**: Implement `POST` endpoints in the FastAPI application to handle data insertion. 
+2. **Task 2**: Change the sensor simulation (client) to use the `requests` library for sending data to the API using HTTP POST requests instead of raw sockets. 
 ### Brief description of the solution 
-The solution involves a FastAPI application (`api.py`) that uses SQLAlchemy as an ORM to interact with the database. It includes a strong endpoint that supports dynamic filtering by sensor type and date ranges, along with sorting. The system employs environment variables for secure database setup and Pydantic schemas for data validation.
+The solution updates `api.py` to include a new route `@app.post("/api/data")`. This endpoint receives a JSON payload that represents a sensor reading, validates it using Pydantic with the `ReadingCreate` schema, and saves it to the PostgreSQL database using SQLAlchemy. The `client-sensor.py` has been completely rewritten to remove socket logic. It now goes through generated sensor data and sends individual HTTP POST requests to the API while handling success and error statuses.
+
 
 ### Table Definitions
 
 | Table Name | Columns | Type | Constraints | Descriptions |
 | :--- | :--- | :--- | :--- | :--- |
-| **sensors** | id | Int | Primary Key, Auto-gen | Unique identifier for the sensor category. |
-| | name | String | Unique, Not Null | The human-readable name of the sensor (e.g., temperature). |
-| **readings** | id | Int | Primary Key, Auto-gen | Unique identifier for each specific data entry. |
-| | sensor_id | Int | Foreign Key (sensors.id) | Links the reading to a specific sensor in the 'sensors' table. |
-| | value | Float | Not Null | The numerical measurement captured by the sensor. |
-| | timestamp | DateTime | Default: Now | The exact date and time when the reading was recorded. |
+| **sensors** | id | Int | Primary Key, Auto-gen | Unique identifier for the sensor. |
+| | name | String | Unique, Not Null | Name of the sensor type (e.g., temperature). |
+| **readings** | id | Int | Primary Key, Auto-gen | Unique identifier for the reading. |
+| | sensor_id | Int | Foreign Key (sensors.id) | Link to the sensor table. |
+| | value | Float | Not Null | Numerical value recorded. |
+| | timestamp | DateTime | Default: Now | Date and time of the record. |
 
 ### Endpoint Definitions
 
 | Verb | Endpoint | Params | Body | Return |
 | :--- | :--- | :--- | :--- | :--- |
-| **GET** | `/api/data` | `Sensor`: String (Optional)<br>`Order`: String (ascendant/descendant)<br>`Init date`: Date (YYYY-MM-DD)<br>`End date`: Date (YYYY-MM-DD) | None | A JSON list of objects containing `id`, `sensor` name, `value`, and `timestamp`. |
+| **GET** | `/api/data` | `Sensor` (Optional)<br>`Order`<br>`Init date`<br>`End date` | None | JSON list of readings with sensor names and timestamps. |
+| **POST** | `/api/data` | None | `{"sensor": "str", "value": 0.0}` | The created reading object or an error message. |
 
 ## Previous Tasks Modifications
 
-### Project 1 & 2 Refactoring
-To ensure consistency across the entire project and adhere to the required coding standards, the following modifications were implemented in the code from previous phases:
+### Project 3 to Project 4 Transition
+The following structural changes were made to evolve the project from a read-only API to a full data management service:
 
-* **Python Naming Conventions**: All method and function names were refactored from PascalCase (e.g., `SaveToDatabase`, `GenSensor`) to **snake_case** (e.g., `save_to_database`, `generate_sensor_data`). This aligns with PEP 8 standards and improves code readability.
-* **SQL Schema Standardization**: Table names in the SQL scripts and ORM models were converted to **lowercase** (e.g., `Sensors` to `sensors`, `Readings` to `readings`). This avoids case-sensitivity issues across different SQL environments and follows common database naming conventions.
-* **Git Conflict Resolution**: Conflict markers previously found in `SQL.sql` were removed, and the schema was cleaned to provide a single, valid initialization script.
-* **Model Integration**: The `Reading` and `Sensor` classes in `servidor.py` were updated to reflect the new table names and relationships, ensuring the API can correctly query the existing data structure.
+* **Removal of Socket Communication**: The socket-based `servidor.py` receiver logic was deprecated. Data insertion is now handled directly by the FastAPI web server.
+* **Client Refactoring**: The client-side code transitioned from sending byte-encoded JSON via TCP sockets to sending structured JSON via HTTP POST using the `requests` library.
+* **API Schema Extension**: Added `ReadingCreate` and `ReadingSchema` Pydantic models to strictly define the input and output data structures, ensuring the API is more robust.
+* **Database Integration in API**: The data insertion logic previously found in `servidor.py` was moved into the API routes to maintain a single point of entry for the database.
 
 ### Libraries Used
-* **FastAPI**: Modern web framework for building APIs.
-* **SQLAlchemy**: SQL toolkit and Object-Relational Mapper.
-* **Uvicorn**: Lightning-fast ASGI server implementation.
-* **Pydantic**: Data validation and settings management using Python type annotations.
-* **Psycopg2-binary**: PostgreSQL database adapter.
-* **Python-dotenv**: Reads key-value pairs from a .env file and sets them as environment variables.
+* **FastAPI**: To handle both GET (retrieval) and POST (storage) requests.
+* **SQLAlchemy**: To manage database interactions.
+* **Requests**: (New in P4) Used by the client to communicate with the API.
+* **Pydantic**: For data validation of the incoming POST bodies.
+* **Uvicorn**, **Psycopg2**, **Dotenv**: For server execution and DB connectivity.
