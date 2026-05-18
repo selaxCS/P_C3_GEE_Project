@@ -12,3 +12,5 @@ humidity/
 irrigation/
 rain_gauge/
 temperature/
+
+__pycache__
